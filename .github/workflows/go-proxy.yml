@@ -1,0 +1,116 @@
+name: Push to Go Proxy and Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+
+jobs:
+  push-to-goproxy-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required for creating releases
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for changelog generation
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'  # Match the version in go.mod
+
+    - name: Get repository info and version
+      id: get_version
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        VERSION=${TAG_NAME#v}  # Remove 'v' prefix for version
+        REPO_PATH="${GITHUB_REPOSITORY}"  # Gets owner/repo format
+        MODULE_PATH="github.com/${REPO_PATH}"
+        echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "REPO_PATH=$REPO_PATH" >> $GITHUB_OUTPUT
+        echo "MODULE_PATH=$MODULE_PATH" >> $GITHUB_OUTPUT
+        echo "Tag: $TAG_NAME, Version: $VERSION"
+        echo "Repository: $REPO_PATH"
+        echo "Module Path: $MODULE_PATH"
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+        if [ -z "$PREV_TAG" ]; then
+          echo "CHANGELOG=Initial release" >> $GITHUB_OUTPUT
+        else
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "## Changes since $PREV_TAG" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run tests
+      run: |
+        go mod tidy
+        go test ./...
+
+    - name: Build and verify module
+      run: |
+        echo "Building and verifying Go module..."
+        go build ./...
+
+    - name: Push module to Go proxy
+      run: |
+        echo "Pushing module ${{ steps.get_version.outputs.MODULE_PATH }}@${{ steps.get_version.outputs.TAG_NAME }} to Go proxy..."
+        GOPROXY=proxy.golang.org go list -m ${{ steps.get_version.outputs.MODULE_PATH }}@${{ steps.get_version.outputs.TAG_NAME }}
+
+    - name: Verify module availability
+      run: |
+        echo "Verifying module availability..."
+        # Wait a moment for the proxy to process
+        sleep 10
+        # Try to fetch the module info to verify it's available
+        go list -m -versions ${{ steps.get_version.outputs.MODULE_PATH }}
+
+    - name: Create GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Create release body
+        cat > release_body.md << 'EOF'
+        # Release ${{ steps.get_version.outputs.TAG_NAME }}
+
+        ${{ steps.changelog.outputs.CHANGELOG }}
+
+        ## Installation
+
+        ```bash
+        go get ${{ steps.get_version.outputs.MODULE_PATH }}@${{ steps.get_version.outputs.TAG_NAME }}
+        ```
+
+        ## Go Module
+
+        This release is available on the Go module proxy at:
+        - https://proxy.golang.org/${{ steps.get_version.outputs.MODULE_PATH }}/@v/${{ steps.get_version.outputs.TAG_NAME }}.info
+
+        ## Verification
+
+        Module has been successfully pushed to Go proxy and is available for use.
+        EOF
+
+        # Create release using GitHub CLI
+        if [[ "${{ steps.get_version.outputs.TAG_NAME }}" == *"-"* ]]; then
+          gh release create "${{ steps.get_version.outputs.TAG_NAME }}" \
+            --title "Release ${{ steps.get_version.outputs.TAG_NAME }}" \
+            --notes-file release_body.md \
+            --prerelease
+        else
+          gh release create "${{ steps.get_version.outputs.TAG_NAME }}" \
+            --title "Release ${{ steps.get_version.outputs.TAG_NAME }}" \
+            --notes-file release_body.md
+        fi
