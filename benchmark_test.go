@@ -220,3 +220,102 @@ func BenchmarkManualSliceMapping(b *testing.B) {
 		_ = result
 	}
 }
+
+// =============================================================================
+// Optimization Level Benchmarks
+// =============================================================================
+
+// Primitive-only types for specialized mapper benchmarks
+type BenchPrimitiveSource struct {
+	ID     int
+	Name   string
+	Age    int
+	Active bool
+	Score  float64
+}
+
+type BenchPrimitiveDest struct {
+	ID     int
+	Name   string
+	Age    int
+	Active bool
+	Score  float64
+}
+
+var benchPrimitiveSource = BenchPrimitiveSource{
+	ID:     1,
+	Name:   "John Doe",
+	Age:    30,
+	Active: true,
+	Score:  95.5,
+}
+
+// BenchmarkAutoMapperPooled benchmarks with pooling enabled
+func BenchmarkAutoMapperPooled(b *testing.B) {
+	mapper := NewWithConfig(WithPooling())
+	CreateMap[BenchSource, BenchDest](mapper)
+	// Warm up
+	_, _ = Map[BenchDest](mapper, benchSource)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Map[BenchDest](mapper, benchSource)
+	}
+}
+
+// BenchmarkAutoMapperUnsafe benchmarks with unsafe optimizations enabled
+func BenchmarkAutoMapperUnsafe(b *testing.B) {
+	mapper := NewWithConfig(WithUnsafeOptimizations())
+	CreateMap[BenchPrimitiveSource, BenchPrimitiveDest](mapper)
+	// Warm up
+	_, _ = Map[BenchPrimitiveDest](mapper, benchPrimitiveSource)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Map[BenchPrimitiveDest](mapper, benchPrimitiveSource)
+	}
+}
+
+// BenchmarkAutoMapperSpecialized benchmarks with specialized mappers
+func BenchmarkAutoMapperSpecialized(b *testing.B) {
+	mapper := NewWithConfig(WithSpecializedMappers())
+	CreateMap[BenchPrimitiveSource, BenchPrimitiveDest](mapper)
+	// Warm up
+	_, _ = Map[BenchPrimitiveDest](mapper, benchPrimitiveSource)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Map[BenchPrimitiveDest](mapper, benchPrimitiveSource)
+	}
+}
+
+// BenchmarkPrimitiveManual benchmarks manual primitive mapping for comparison
+func BenchmarkPrimitiveManual(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = BenchPrimitiveDest{
+			ID:     benchPrimitiveSource.ID,
+			Name:   benchPrimitiveSource.Name,
+			Age:    benchPrimitiveSource.Age,
+			Active: benchPrimitiveSource.Active,
+			Score:  benchPrimitiveSource.Score,
+		}
+	}
+}
+
+// BenchmarkPrimitiveStandard benchmarks standard mapping for primitives
+func BenchmarkPrimitiveStandard(b *testing.B) {
+	mapper := New()
+	CreateMap[BenchPrimitiveSource, BenchPrimitiveDest](mapper)
+	// Warm up
+	_, _ = Map[BenchPrimitiveDest](mapper, benchPrimitiveSource)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = Map[BenchPrimitiveDest](mapper, benchPrimitiveSource)
+	}
+}

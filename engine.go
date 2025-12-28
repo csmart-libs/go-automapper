@@ -141,6 +141,8 @@ func (m *Mapper) mapStruct(srcVal, destVal reflect.Value, srcType, destType refl
 
 	m.config.mu.RLock()
 	typeMap, exists := m.config.typeMaps[key]
+	optMap := m.config.optimizedMaps[key]
+	optLevel := m.config.optLevel
 	m.config.mu.RUnlock()
 
 	if !exists {
@@ -148,6 +150,17 @@ func (m *Mapper) mapStruct(srcVal, destVal reflect.Value, srcType, destType refl
 		typeMap = m.autoCreateTypeMap(srcType, destType)
 	}
 
+	// Use optimized path if available and optimization is enabled
+	if optLevel > OptimizationNone && optMap != nil && optMap.compiled {
+		return m.mapStructOptimized(srcVal, destVal, optMap)
+	}
+
+	// Standard mapping path
+	return m.mapStructStandard(srcVal, destVal, typeMap)
+}
+
+// mapStructStandard performs standard reflection-based struct mapping.
+func (m *Mapper) mapStructStandard(srcVal, destVal reflect.Value, typeMap *TypeMap) error {
 	// Execute before map functions
 	for _, beforeFn := range typeMap.beforeMap {
 		if err := beforeFn(srcVal.Interface(), destVal.Addr().Interface()); err != nil {
@@ -413,6 +426,12 @@ func (m *Mapper) autoCreateTypeMap(srcType, destType reflect.Type) *TypeMap {
 
 	tm.autoConfigureMembers(m.config.typeCache)
 	m.config.typeMaps[key] = tm
+
+	// Compile optimized version if optimization is enabled
+	if m.config.optLevel > OptimizationNone {
+		optMap := compileOptimizedTypeMap(tm, m.config.optLevel)
+		m.config.optimizedMaps[key] = optMap
+	}
 
 	return tm
 }

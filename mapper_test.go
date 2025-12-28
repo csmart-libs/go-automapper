@@ -606,3 +606,216 @@ func TestForMemberMapFrom(t *testing.T) {
 		t.Errorf("Email mismatch: got %s, want john@example.com", dest.Email)
 	}
 }
+
+// =============================================================================
+// Optimization Mode Tests
+// =============================================================================
+
+// Test types for optimization tests
+type OptSource struct {
+	ID     int
+	Name   string
+	Age    int
+	Active bool
+	Score  float64
+}
+
+type OptDest struct {
+	ID     int
+	Name   string
+	Age    int
+	Active bool
+	Score  float64
+}
+
+// TestPooledMapping tests mapping with pooling enabled
+func TestPooledMapping(t *testing.T) {
+	mapper := NewWithConfig(WithPooling())
+	CreateMap[OptSource, OptDest](mapper)
+
+	src := OptSource{ID: 1, Name: "Test", Age: 25, Active: true, Score: 88.5}
+	dest, err := Map[OptDest](mapper, src)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dest.ID != 1 {
+		t.Errorf("ID mismatch: got %d, want 1", dest.ID)
+	}
+	if dest.Name != "Test" {
+		t.Errorf("Name mismatch: got %s, want Test", dest.Name)
+	}
+	if dest.Age != 25 {
+		t.Errorf("Age mismatch: got %d, want 25", dest.Age)
+	}
+	if dest.Active != true {
+		t.Errorf("Active mismatch: got %v, want true", dest.Active)
+	}
+	if dest.Score != 88.5 {
+		t.Errorf("Score mismatch: got %f, want 88.5", dest.Score)
+	}
+}
+
+// TestUnsafeMapping tests mapping with unsafe optimizations
+func TestUnsafeMapping(t *testing.T) {
+	mapper := NewWithConfig(WithUnsafeOptimizations())
+	CreateMap[OptSource, OptDest](mapper)
+
+	src := OptSource{ID: 42, Name: "Unsafe", Age: 30, Active: false, Score: 99.9}
+	dest, err := Map[OptDest](mapper, src)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dest.ID != 42 {
+		t.Errorf("ID mismatch: got %d, want 42", dest.ID)
+	}
+	if dest.Name != "Unsafe" {
+		t.Errorf("Name mismatch: got %s, want Unsafe", dest.Name)
+	}
+	if dest.Age != 30 {
+		t.Errorf("Age mismatch: got %d, want 30", dest.Age)
+	}
+	if dest.Active != false {
+		t.Errorf("Active mismatch: got %v, want false", dest.Active)
+	}
+	if dest.Score != 99.9 {
+		t.Errorf("Score mismatch: got %f, want 99.9", dest.Score)
+	}
+}
+
+// TestSpecializedMapping tests mapping with specialized mappers
+func TestSpecializedMapping(t *testing.T) {
+	mapper := NewWithConfig(WithSpecializedMappers())
+	CreateMap[OptSource, OptDest](mapper)
+
+	src := OptSource{ID: 100, Name: "Specialized", Age: 35, Active: true, Score: 77.7}
+	dest, err := Map[OptDest](mapper, src)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dest.ID != 100 {
+		t.Errorf("ID mismatch: got %d, want 100", dest.ID)
+	}
+	if dest.Name != "Specialized" {
+		t.Errorf("Name mismatch: got %s, want Specialized", dest.Name)
+	}
+	if dest.Age != 35 {
+		t.Errorf("Age mismatch: got %d, want 35", dest.Age)
+	}
+	if dest.Active != true {
+		t.Errorf("Active mismatch: got %v, want true", dest.Active)
+	}
+	if dest.Score != 77.7 {
+		t.Errorf("Score mismatch: got %f, want 77.7", dest.Score)
+	}
+}
+
+// TestOptimizedNestedMapping tests nested struct mapping with optimizations
+func TestOptimizedNestedMapping(t *testing.T) {
+	mapper := NewWithConfig(WithSpecializedMappers())
+	CreateMap[SourceNested, DestNested](mapper)
+	CreateMap[Address, AddressDTO](mapper)
+
+	src := SourceNested{
+		Name: "John",
+		Address: Address{
+			Street: "123 Main St",
+			City:   "Boston",
+			Zip:    "02101",
+		},
+	}
+
+	dest, err := Map[DestNested](mapper, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if dest.Name != src.Name {
+		t.Errorf("Name mismatch: got %s, want %s", dest.Name, src.Name)
+	}
+	if dest.Address.City != "Boston" {
+		t.Errorf("City mismatch: got %s, want Boston", dest.Address.City)
+	}
+}
+
+// TestOptimizedWithHooks tests that hooks work correctly with optimization
+func TestOptimizedWithHooks(t *testing.T) {
+	mapper := NewWithConfig(WithSpecializedMappers())
+	hookCalled := false
+
+	CreateMap[OptSource, OptDest](mapper).
+		AfterMap(func(src *OptSource, dest *OptDest) error {
+			hookCalled = true
+			dest.Name = "Modified"
+			return nil
+		})
+
+	src := OptSource{ID: 1, Name: "Original", Age: 25, Active: true, Score: 50.0}
+	dest, err := Map[OptDest](mapper, src)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hookCalled {
+		t.Error("AfterMap hook should have been called")
+	}
+	if dest.Name != "Modified" {
+		t.Errorf("Name should be modified by hook: got %s", dest.Name)
+	}
+}
+
+// TestOptimizedSliceMapping tests slice mapping with optimizations
+func TestOptimizedSliceMapping(t *testing.T) {
+	mapper := NewWithConfig(WithPooling())
+	CreateMap[SourceItem, DestItem](mapper)
+
+	src := []SourceItem{
+		{ID: 1, Name: "Item 1"},
+		{ID: 2, Name: "Item 2"},
+		{ID: 3, Name: "Item 3"},
+	}
+
+	dest, err := MapSlice[SourceItem, DestItem](mapper, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(dest) != 3 {
+		t.Fatalf("Length mismatch: got %d, want 3", len(dest))
+	}
+	if dest[1].Name != "Item 2" {
+		t.Errorf("Name mismatch: got %s, want Item 2", dest[1].Name)
+	}
+}
+
+// TestOptimizationLevelConfiguration tests configuration options
+func TestOptimizationLevelConfiguration(t *testing.T) {
+	t.Run("WithOptimizationLevel Pooled", func(t *testing.T) {
+		mapper := NewWithConfig(WithOptimizationLevel(OptimizationPooled))
+		if mapper.config.optLevel != OptimizationPooled {
+			t.Errorf("optLevel mismatch: got %v, want %v", mapper.config.optLevel, OptimizationPooled)
+		}
+	})
+
+	t.Run("WithOptimizationLevel Unsafe", func(t *testing.T) {
+		mapper := NewWithConfig(WithOptimizationLevel(OptimizationUnsafe))
+		if mapper.config.optLevel != OptimizationUnsafe {
+			t.Errorf("optLevel mismatch: got %v, want %v", mapper.config.optLevel, OptimizationUnsafe)
+		}
+		if !mapper.config.useUnsafe {
+			t.Error("useUnsafe should be true")
+		}
+	})
+
+	t.Run("WithOptimizationLevel Specialized", func(t *testing.T) {
+		mapper := NewWithConfig(WithOptimizationLevel(OptimizationSpecialized))
+		if mapper.config.optLevel != OptimizationSpecialized {
+			t.Errorf("optLevel mismatch: got %v, want %v", mapper.config.optLevel, OptimizationSpecialized)
+		}
+		if !mapper.config.useUnsafe {
+			t.Error("useUnsafe should be true")
+		}
+	})
+}

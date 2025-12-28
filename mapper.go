@@ -33,6 +33,11 @@ type MapperConfiguration struct {
 	typeCache    *typeCache
 	converters   map[typeMapKey]TypeConverter
 	allowNilColl bool
+
+	// Optimization settings
+	optLevel      OptimizationLevel
+	useUnsafe     bool
+	optimizedMaps map[typeMapKey]*TypeMapOptimized
 }
 
 // typeMapKey uniquely identifies a source-destination type pair.
@@ -85,9 +90,10 @@ type ConditionFunc func(src any) bool
 func New() *Mapper {
 	return &Mapper{
 		config: &MapperConfiguration{
-			typeMaps:   make(map[typeMapKey]*TypeMap),
-			typeCache:  newTypeCache(),
-			converters: make(map[typeMapKey]TypeConverter),
+			typeMaps:      make(map[typeMapKey]*TypeMap),
+			typeCache:     newTypeCache(),
+			converters:    make(map[typeMapKey]TypeConverter),
+			optimizedMaps: make(map[typeMapKey]*TypeMapOptimized),
 		},
 	}
 }
@@ -108,6 +114,47 @@ type ConfigOption func(*MapperConfiguration)
 func WithAllowNullCollections() ConfigOption {
 	return func(c *MapperConfiguration) {
 		c.allowNilColl = true
+	}
+}
+
+// WithOptimizationLevel sets the optimization level for the mapper.
+func WithOptimizationLevel(level OptimizationLevel) ConfigOption {
+	return func(c *MapperConfiguration) {
+		c.optLevel = level
+		if level >= OptimizationUnsafe {
+			c.useUnsafe = true
+		}
+	}
+}
+
+// WithUnsafeOptimizations enables unsafe pointer optimizations for primitive types.
+// This provides significant performance improvements but uses unsafe operations.
+// Only use this when you understand the implications of unsafe code.
+func WithUnsafeOptimizations() ConfigOption {
+	return func(c *MapperConfiguration) {
+		c.useUnsafe = true
+		if c.optLevel < OptimizationUnsafe {
+			c.optLevel = OptimizationUnsafe
+		}
+	}
+}
+
+// WithPooling is a configuration option placeholder for future object pooling support.
+// Currently, this option only sets the optimization level but does not enable actual pooling.
+// It is kept for API compatibility and future implementation.
+func WithPooling() ConfigOption {
+	return func(c *MapperConfiguration) {
+		if c.optLevel < OptimizationPooled {
+			c.optLevel = OptimizationPooled
+		}
+	}
+}
+
+// WithSpecializedMappers enables pre-compiled specialized mappers for primitive-only structs.
+func WithSpecializedMappers() ConfigOption {
+	return func(c *MapperConfiguration) {
+		c.optLevel = OptimizationSpecialized
+		c.useUnsafe = true
 	}
 }
 
@@ -143,6 +190,12 @@ func CreateMap[TSrc, TDest any](m *Mapper) *TypeMapBuilder[TSrc, TDest] {
 	tm.autoConfigureMembers(m.config.typeCache)
 
 	m.config.typeMaps[key] = tm
+
+	// Compile optimized version if optimization is enabled
+	if m.config.optLevel > OptimizationNone {
+		optMap := compileOptimizedTypeMap(tm, m.config.optLevel)
+		m.config.optimizedMaps[key] = optMap
+	}
 
 	return &TypeMapBuilder[TSrc, TDest]{
 		mapper:  m,
