@@ -1,6 +1,6 @@
 # Go AutoMapper
 
-A high-performance object-to-object mapping library for Go - AutoMaper.
+A high-performance object-to-object mapping library for Go - AutoMapper.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/csmart-libs/go-automapper.svg)](https://pkg.go.dev/github.com/csmart-libs/go-automapper)
 [![Go Report Card](https://goreportcard.com/badge/github.com/csmart-libs/go-automapper)](https://goreportcard.com/report/github.com/csmart-libs/go-automapper)
